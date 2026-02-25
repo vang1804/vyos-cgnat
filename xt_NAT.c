@@ -127,17 +127,17 @@ static char *print_sockaddr(const struct sockaddr_storage *ss)
     return buf;
 }
 
-static inline long timer_end(struct timespec start_time)
+static inline long timer_end(struct timespec64 start_time)
 {
-    struct timespec end_time;
-    getrawmonotonic(&end_time);
+    struct timespec64 end_time;
+    ktime_get_raw_ts64(&end_time);
     return(end_time.tv_nsec - start_time.tv_nsec);
 }
 
-static inline struct timespec timer_start(void)
+static inline struct timespec64 timer_start(void)
 {
-    struct timespec start_time;
-    getrawmonotonic(&start_time);
+    struct timespec64 start_time;
+    ktime_get_raw_ts64(&start_time);
     return start_time;
 }
 
@@ -188,7 +188,7 @@ static inline u_int32_t pool_table_create(void)
     return 0;
 }
 
-void pool_table_remove(void)
+static void pool_table_remove(void)
 {
     kfree(create_session_lock);
 
@@ -217,7 +217,7 @@ static int users_htable_create(void)
     return 0;
 }
 
-void users_htable_remove(void)
+static void users_htable_remove(void)
 {
     struct user_htable_ent *user;
     struct hlist_head *head;
@@ -228,7 +228,7 @@ void users_htable_remove(void)
         spin_lock_bh(&ht_users[i].lock);
         head = &ht_users[i].user;
         hlist_for_each_entry_safe(user, next, head, list_node) {
-            hlist_del_rcu(&user->list_node); 
+            hlist_del_rcu(&user->list_node);
             ht_users[i].use--;
             kfree_rcu(user, rcu);
         }
@@ -243,7 +243,7 @@ void users_htable_remove(void)
     return;
 }
 
-void nat_htable_remove(void)
+static void nat_htable_remove(void)
 {
     struct nat_htable_ent *session;
     struct hlist_head *head;
@@ -318,7 +318,7 @@ static int nat_htable_create(void)
     return 0;
 }
 
-struct nat_htable_ent *lookup_session(struct xt_nat_htable *ht, const uint8_t proto, const u_int32_t addr, const uint16_t port)
+static struct nat_htable_ent *lookup_session(struct xt_nat_htable *ht, const uint8_t proto, const u_int32_t addr, const uint16_t port)
 {
     struct nat_htable_ent *session;
     struct hlist_head *head;
@@ -405,7 +405,7 @@ static int check_user_limits(const u_int8_t proto, const u_int32_t addr)
     return ret;
 }
 
-void update_user_limits(const u_int8_t proto, const u_int32_t addr, const int8_t operation)
+static void update_user_limits(const u_int8_t proto, const u_int32_t addr, const int8_t operation)
 {
     struct user_htable_ent *user;
     struct hlist_head *head;
@@ -475,7 +475,7 @@ void update_user_limits(const u_int8_t proto, const u_int32_t addr, const int8_t
 }
 
 /* socket code */
-static void sk_error_report(struct sock *sk)
+static void nat_sk_error_report(struct sock *sk)
 {
     /* clear connection refused errors if any */
     sk->sk_err = 0;
@@ -494,7 +494,7 @@ static struct socket *usock_open_sock(const struct sockaddr_storage *addr, void 
     }
     sock->sk->sk_allocation = GFP_ATOMIC;
     sock->sk->sk_prot->unhash(sock->sk); /* hidden from input */
-    sock->sk->sk_error_report = &sk_error_report; /* clear ECONNREFUSED */
+    sock->sk->sk_error_report = &nat_sk_error_report; /* clear ECONNREFUSED */
     sock->sk->sk_user_data = user_data; /* usock */
 
     if (sndbuf < SOCK_MIN_SNDBUF)
@@ -613,7 +613,7 @@ static void netflow_export_flow_v5(const uint8_t proto, const u_int32_t useraddr
     spin_unlock_bh(&nfsend_lock);
 }
 
-struct nat_htable_ent *create_nat_session(const uint8_t proto, const u_int32_t useraddr, const uint16_t userport, const u_int32_t nataddr)
+static struct nat_htable_ent *create_nat_session(const uint8_t proto, const u_int32_t useraddr, const uint16_t userport, const u_int32_t nataddr)
 {
     unsigned int hash;
     struct nat_htable_ent *session, *session2;
@@ -818,13 +818,6 @@ nat_tg(struct sk_buff *skb, const struct xt_action_param *par)
                 rcu_read_unlock_bh();
             } else {
                 rcu_read_unlock_bh();
-                //printk(KERN_DEBUG "xt_NAT SNAT: NOT found session for src ip = %pI4 and src port = %d\n", &ip->saddr, ntohs(tcp->source));
-
-                /*                                      if (!tcp->syn) {
-                                                                //printk(KERN_DEBUG "xt_NAT SNAT: SYN flag is not set. Dropping packet\n");
-                                                                return NF_DROP;
-                                                        }
-                */
                 session = create_nat_session(ip->protocol, ip->saddr, tcp->source, nat_addr);
                 if (session == NULL) {
                     printk(KERN_NOTICE "xt_NAT SNAT: Cannot create new session. Dropping packet\n");
@@ -1322,7 +1315,7 @@ nat_tg(struct sk_buff *skb, const struct xt_action_param *par)
     return NF_ACCEPT;
 }
 
-void users_cleanup_timer_callback( struct timer_list *timer )
+static void users_cleanup_timer_callback( struct timer_list *timer )
 {
     struct user_htable_ent *user;
     struct hlist_head *head;
@@ -1372,7 +1365,7 @@ void users_cleanup_timer_callback( struct timer_list *timer )
     spin_unlock_bh(&users_timer_lock);
 }
 
-void sessions_cleanup_timer_callback( struct timer_list *timer )
+static void sessions_cleanup_timer_callback( struct timer_list *timer )
 {
     struct nat_htable_ent *session;
     struct hlist_head *head;
@@ -1441,7 +1434,7 @@ void sessions_cleanup_timer_callback( struct timer_list *timer )
     spin_unlock_bh(&sessions_timer_lock);
 }
 
-void nf_send_timer_callback( struct timer_list *timer )
+static void nf_send_timer_callback( struct timer_list *timer )
 {
     spin_lock_bh(&nfsend_lock);
     //printk(KERN_DEBUG "xt_NAT TIMER: Exporting netflow by timer\n");
@@ -1490,11 +1483,11 @@ static int nat_seq_open(struct inode *inode, struct file *file)
 {
     return single_open(file, nat_seq_show, NULL);
 }
-static const struct file_operations nat_seq_fops = {
-    .open		= nat_seq_open,
-    .read		= seq_read,
-    .llseek		= seq_lseek,
-    .release	= single_release,
+static const struct proc_ops nat_seq_fops = {
+    .proc_open		= nat_seq_open,
+    .proc_read		= seq_read,
+    .proc_lseek		= seq_lseek,
+    .proc_release	= single_release,
 };
 
 
@@ -1535,11 +1528,11 @@ static int users_seq_open(struct inode *inode, struct file *file)
 {
     return single_open(file, users_seq_show, NULL);
 }
-static const struct file_operations users_seq_fops = {
-    .open           = users_seq_open,
-    .read           = seq_read,
-    .llseek         = seq_lseek,
-    .release        = single_release,
+static const struct proc_ops users_seq_fops = {
+    .proc_open           = users_seq_open,
+    .proc_read           = seq_read,
+    .proc_lseek          = seq_lseek,
+    .proc_release        = single_release,
 };
 
 static int stat_seq_show(struct seq_file *m, void *v)
@@ -1558,11 +1551,11 @@ static int stat_seq_open(struct inode *inode, struct file *file)
 {
     return single_open(file, stat_seq_show, NULL);
 }
-static const struct file_operations stat_seq_fops = {
-    .open           = stat_seq_open,
-    .read           = seq_read,
-    .llseek         = seq_lseek,
-    .release        = single_release,
+static const struct proc_ops stat_seq_fops = {
+    .proc_open           = stat_seq_open,
+    .proc_read           = seq_read,
+    .proc_lseek          = seq_lseek,
+    .proc_release        = single_release,
 };
 
 #define SEPARATORS " ,;\t\n"
@@ -1685,9 +1678,9 @@ static void __exit nat_tg_exit(void)
     spin_lock_bh(&sessions_timer_lock);
     spin_lock_bh(&users_timer_lock);
     spin_lock_bh(&nfsend_lock);
-    del_timer( &sessions_cleanup_timer );
-    del_timer( &users_cleanup_timer );
-    del_timer( &nf_send_timer );
+    compat_del_timer_sync( &sessions_cleanup_timer );
+    compat_del_timer_sync( &users_cleanup_timer );
+    compat_del_timer_sync( &nf_send_timer );
 
     remove_proc_entry( "sessions", proc_net_nat );
     remove_proc_entry( "users", proc_net_nat );
