@@ -996,9 +996,9 @@ nat_tg(struct sk_buff *skb, const struct xt_action_param *par)
 
             if (unlikely(skb_shinfo(skb)->nr_frags > 1 && skb_headlen(skb) == sizeof(struct iphdr))) {
                 frag = &skb_shinfo(skb)->frags[0];
-                //printk(KERN_DEBUG "xt_NAT DNAT: frag_size = %d (required %lu)\n", frag->size, sizeof(struct tcphdr));
-                if (unlikely(frag->size < sizeof(struct tcphdr))) {
-                        printk(KERN_DEBUG "xt_NAT DNAT: drop TCP frag_size = %d\n", frag->size);
+                //printk(KERN_DEBUG "xt_NAT DNAT: frag_size = %d (required %lu)\n", skb_frag_size(frag), sizeof(struct tcphdr));
+                if (unlikely(skb_frag_size(frag) < sizeof(struct tcphdr))) {
+                        printk(KERN_DEBUG "xt_NAT DNAT: drop TCP frag_size = %d\n", skb_frag_size(frag));
                         return NF_DROP;
                 }
                 tcp = (struct tcphdr *)skb_frag_address_safe(frag);
@@ -1063,7 +1063,7 @@ nat_tg(struct sk_buff *skb, const struct xt_action_param *par)
             } else {
                 rcu_read_unlock_bh();
                 atomic64_inc(&dnat_dropped);
-                //printk(KERN_DEBUG "xt_NAT DNAT: NOT found session for nat ip = %pI4 and nat port = %d\n", &ip->daddr, ntohs(tcp->dest));
+                printk(KERN_DEBUG "xt_NAT DNAT: NOT found TCP session for nat ip = %pI4:%d from %pI4:%d\n", &ip->daddr, ntohs(tcp->dest),&ip->saddr, ntohs(tcp->source));
                 //return NF_DROP;
             }
         } else if (ip->protocol == IPPROTO_UDP) {
@@ -1078,9 +1078,9 @@ nat_tg(struct sk_buff *skb, const struct xt_action_param *par)
 
             if (unlikely(skb_shinfo(skb)->nr_frags > 1 && skb_headlen(skb) == sizeof(struct iphdr))) {
                 frag = &skb_shinfo(skb)->frags[0];
-                //printk(KERN_DEBUG "xt_NAT DNAT: frag_size = %d (required %lu)\n", frag->size, sizeof(struct udphdr));
-                if (unlikely(frag->size < sizeof(struct udphdr))) {
-                        printk(KERN_DEBUG "xt_NAT DNAT: drop UDP frag_size = %d\n", frag->size);
+                //printk(KERN_DEBUG "xt_NAT DNAT: frag_size = %d (required %lu)\n", skb_frag_size(frag), sizeof(struct udphdr));
+                if (unlikely(skb_frag_size(frag) < sizeof(struct udphdr))) {
+                        printk(KERN_DEBUG "xt_NAT DNAT: drop UDP frag_size = %d\n", skb_frag_size(frag));
                         return NF_DROP;
                 }
                 udp = (struct udphdr *)skb_frag_address_safe(frag);
@@ -1117,7 +1117,8 @@ nat_tg(struct sk_buff *skb, const struct xt_action_param *par)
             } else {
                 rcu_read_unlock_bh();
                 atomic64_inc(&dnat_dropped);
-                //printk(KERN_DEBUG "xt_NAT DNAT: NOT found session for nat ip = %pI4 and nat port = %d\n", &ip->daddr, ntohs(udp->dest));
+                //printk(KERN_DEBUG "xt_NAT DNAT: found session for src ip = %pI4 and src port = %d and nat port = %d\n", &session->data->in_addr, ntohs(session->data->in_port), ntohs(udp->dest));
+                printk(KERN_DEBUG "xt_NAT DNAT: NOT found UDP session for nat ip = %pI4:%d from %pI4:%d\n", &ip->daddr, ntohs(udp->dest), &ip->saddr, ntohs(udp->source));
                 //return NF_DROP;
             }
         } else if (ip->protocol == IPPROTO_ICMP) {
@@ -1278,7 +1279,7 @@ nat_tg(struct sk_buff *skb, const struct xt_action_param *par)
             } else {
                 rcu_read_unlock_bh();
                 atomic64_inc(&dnat_dropped);
-                //printk(KERN_DEBUG "xt_NAT DNAT: NOT found session for nat ip = %pI4 and icmp id = %d\n", &ip->daddr, ntohs(nat_port));
+                printk(KERN_DEBUG "xt_NAT DNAT: NOT found ICMP session for nat ip = %pI4 and icmp id = %d\n", &ip->daddr, ntohs(nat_port));
                 //return NF_DROP;
             }
         } else {
@@ -1304,7 +1305,7 @@ nat_tg(struct sk_buff *skb, const struct xt_action_param *par)
             } else {
                 rcu_read_unlock_bh();
                 atomic64_inc(&dnat_dropped);
-                //printk(KERN_DEBUG "xt_NAT DNAT: NOT found session for nat ip = %pI4\n", &ip->daddr);
+                printk(KERN_DEBUG "xt_NAT DNAT: NOT found IP session for nat ip = %pI4\n", &ip->daddr);
                 //return NF_DROP;
             }
         }
